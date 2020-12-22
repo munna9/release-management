@@ -1,0 +1,69 @@
+image: alpine:latest
+
+variables:
+  POSTGRES_ENABLED: "false"
+  DAST_DISABLED: "true"
+  TEST_DISABLED: "true"
+  SECRET_DETECTION_DISABLED: "true"
+  CODE_QUALITY_DISABLED: "true"
+  CONTAINER_SCANNING_DISABLED: "true"
+  LICENSE_MANAGEMENT_DISABLED: "true"
+  PERFORMANCE_DISABLED: "true"
+  # Autodevops defaults
+  DOCKER_DRIVER: overlay2
+  ROLLOUT_RESOURCE_TYPE: deployment
+  DOCKER_TLS_CERTDIR: ""  # https://gitlab.com/gitlab-org/gitlab-runner/issues/4501
+
+stages:
+  - build
+  - test
+  - deploy  # dummy stage to follow the template guidelines
+  - review
+  - dast
+  - staging
+  - canary
+  - production
+  - deployment
+  - incremental rollout 10%
+  - incremental rollout 25%
+  - incremental rollout 50%
+  - incremental rollout 100%
+  - performance
+  - cleanup
+  - trigger
+
+review:
+  rules:
+    - when: never
+
+build:
+  rules:
+    - when: never
+
+staging:
+  rules:
+    - when: never
+
+review:
+  rules:
+    - when: never
+
+stop_review:
+  rules:
+    - when: never
+
+production:
+  rules:
+    - when: never
+
+deployment:
+  stage: deployment
+  extends:
+    - .before_script
+    - production_manual
+  rules:
+    - when: manual
+
+include:
+  - template: Auto-DevOps.gitlab-ci.yml
+  - Jobs/EP-Helm-Args-Script.yml

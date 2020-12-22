@@ -1,0 +1,70 @@
+variables:
+  POSTGRES_ENABLED: "false"
+  PERFORMANCE_DISABLED: "true"
+
+stages:
+  - build
+  - test
+  - deploy  # dummy stage to follow the template guidelines
+  - review
+  - dast
+  - staging
+  - canary
+  - production
+  - deployment
+  - incremental rollout 10%
+  - incremental rollout 25%
+  - incremental rollout 50%
+  - incremental rollout 100%
+  - performance
+  - cleanup
+  - trigger
+
+dast_environment_deploy:
+  extends:
+    - .before_script
+    - .dast-auto-deploy
+
+review:
+  extends:
+    - .before_script
+    - .auto-deploy
+
+production:
+  rules:
+    - when: never
+
+deployment:
+  stage: deployment
+  environment:
+    name: dev
+  extends:
+    - .before_script
+    - .production
+  after_script: # build env file with deployment info
+    - |
+      cat << EOF > .deployment.env
+      CI_REGISTRY_IMAGE=${CI_REGISTRY_IMAGE}
+      CI_COMMIT_SHA=${CI_COMMIT_SHA}
+      DEV_IMAGE_PULL_TOKEN=${DEV_IMAGE_PULL_TOKEN}
+      EOF
+  artifacts:
+    paths:
+      - chart
+      - .deployment.env
+  rules:
+    - if: '$CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == ""'
+      when: never
+    - if: '$STAGING_ENABLED'
+      when: never
+    - if: '$CANARY_ENABLED'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_ENABLED'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_MODE'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "master"'
+
+include:
+  - template: Auto-DevOps.gitlab-ci.yml
+  - Jobs/EP-Helm-Args-Script.yml

@@ -1,0 +1,22 @@
+deployment:
+  environment:
+    name: <ENVIRONMENT_NAME>
+    url: https://<NEW_ENV_APP_URL>
+  needs:
+    - project: <GITLAB>/<GROUP>/<PROJECT> # the project where we set up the dev pipeline
+      job: deployment
+      ref: master
+      artifacts: true
+
+# <ENVIRONMENT_NAME>:
+#   stage: trigger
+#   trigger:
+#     project: <GITLAB>/<GROUP>/<PROJECT>
+#     strategy: depend
+#   rules:
+#   - if: '$CI_COMMIT_BRANCH != "master"'
+#     when: never
+
+include:
+  project: dev/ep/release-management
+  file: /Jobs/EP-Stage-Promotion-Template.yml

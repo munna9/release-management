@@ -1,0 +1,80 @@
+.before_script:
+  before_script:
+    - |
+      # Load deployment details (url, hash, ...)
+      [[ -f ./.deployment.env ]] && source ./.deployment.env
+
+    - |
+      # Assertions
+      if [[ -z "$DEV_IMAGE_PULL_TOKEN" ]]; then
+        echo "ERROR: DEV_IMAGE_PULL_TOKEN variable is not present in the artifact or GitLab CI/CD Settings"
+        exit 1
+      fi
+
+    - |
+      # Add default helm arguments
+      declare -a helm_upgrade_extra_args
+      helm_upgrade_extra_args+=(--force --set "fullnameOverride=${CI_ENVIRONMENT_SLUG}")
+
+    # Create dev registry image pull token secret
+    - >
+      kubectl create secret -n "$KUBE_NAMESPACE"
+      docker-registry "dev-image-pull-token"
+      --docker-server="$CI_REGISTRY"
+      --docker-username="dev-image-pull-token"
+      --docker-password="${DEV_IMAGE_PULL_TOKEN}"
+      -o yaml --dry-run
+      | kubectl replace -n "$KUBE_NAMESPACE" --force -f -
+
+    - |
+      # Patch default service account to use dev-image-pull-token
+      kubectl -n "$KUBE_NAMESPACE" patch serviceaccount default -p '{"imagePullSecrets": [{"name": "dev-image-pull-token"}]}'
+
+    - |
+      # Disable persistence in dast/review environments
+      case "$CI_ENVIRONMENT_SLUG" in
+        dast-*|review-*) helm_upgrade_extra_args+=(--set persistence.enabled=false) ;;
+      esac
+
+    - |
+      # Add OAuth annotations to all but DAST environments
+      if [[ ! "$CI_ENVIRONMENT_SLUG" =~ dast- ]]; then
+        OAUTH_URL=${OAUTH_URL=oauth.${KUBE_INGRESS_BASE_DOMAIN}}  # Set default OAuth URL if not provided
+        echo "OAuth URL: $OAUTH_URL"
+
+        if [ -n "${OAUTH_URL}" ]; then
+          oauth_values_file=$(mktemp)
+          cat > $oauth_values_file << EOF
+          ingress:
+            annotations:
+              nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_URL}/oauth2/start?rd=https://\$host\$request_uri\$is_args\$args
+              nginx.ingress.kubernetes.io/auth-url: https://${OAUTH_URL}/oauth2/auth
+      EOF
+          helm_upgrade_extra_args+=(--values "${oauth_values_file}")
+        fi
+      fi
+
+    - |
+      # Add extra helm args
+      helm_extra_values=$(mktemp)
+      cat > $helm_extra_values << EOF
+      ingress:
+        hosts:
+          - ${CI_ENVIRONMENT_URL#*://}
+        annotations:
+          kubernetes.io/ingress.class: nginx
+      annotations:
+        app.gitlab.com/app: ${CI_PROJECT_PATH_SLUG}
+        app.gitlab.com/env: ${CI_ENVIRONMENT_SLUG}
+      EOF
+      helm_upgrade_extra_args+=(--values "${helm_extra_values}")
+
+      if [[ -n "${HELM_UPGRADE_EXTRA_VALUES_FILE}" ]]; then
+        helm_upgrade_extra_args+=(--values "${HELM_UPGRADE_EXTRA_VALUES_FILE}")
+      fi
+
+      export HELM_UPGRADE_EXTRA_ARGS="${HELM_UPGRADE_EXTRA_ARGS} ${helm_upgrade_extra_args[@]}"
+
+    # - |
+    #   # debug
+    #   echo "HELM_UPGRADE_EXTRA_ARGS=$HELM_UPGRADE_EXTRA_ARGS"
